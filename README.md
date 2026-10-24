@@ -26,12 +26,15 @@ This custom component pulls bill details daily from the official [CEB InstantPay
 
 ## Installation
 
-### Method 1: Via HACS (Recommended)
+### Method 1: Via HACS (1-Click Install)
 
-1. Ensure [HACS](https://hacs.xyz/) is installed in your Home Assistant.
-2. In Home Assistant, open **HACS** > **Integrations**.
-3. Click the **three dots** in the top right corner and select **Custom repositories**.
-4. Paste the repository URL:
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=muradjabir&repository=ha-ceb-electricity-bill&category=integration)
+
+Click the button above to directly open and install the repository in HACS, or follow the manual steps:
+
+1. In Home Assistant, open **HACS** > **Integrations**.
+2. Click the **three dots** in the top right corner and select **Custom repositories**.
+3. Paste the repository URL:
    ```text
    https://github.com/muradjabir/ha-ceb-electricity-bill
    ```
