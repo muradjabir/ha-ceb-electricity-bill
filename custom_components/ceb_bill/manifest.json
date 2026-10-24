@@ -1,0 +1,10 @@
+{
+  "domain": "ceb_bill",
+  "name": "CEB Electricity Bill (Sri Lanka)",
+  "codeowners": ["@muradjabir"],
+  "config_flow": true,
+  "documentation": "https://github.com/muradjabir/ha-ceb-electricity-bill",
+  "issue_tracker": "https://github.com/muradjabir/ha-ceb-electricity-bill/issues",
+  "iot_class": "cloud_polling",
+  "version": "1.0.0"
+}
