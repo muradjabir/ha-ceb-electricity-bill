@@ -7,11 +7,17 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN, CONF_ACCOUNT_NUMBER
+from .const import (
+    DOMAIN,
+    CONF_ACCOUNT_NUMBER,
+    CONF_SCAN_INTERVAL_HOURS,
+    DEFAULT_SCAN_INTERVAL_HOURS,
+    MIN_SCAN_INTERVAL_HOURS,
+)
 from .coordinator import fetch_ceb_bill_sync
 
 
@@ -33,6 +39,12 @@ class CEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for CEB Electricity Bill."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
+        """Get options flow for this handler."""
+        return CEBOptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -58,11 +70,46 @@ class CEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_ACCOUNT_NUMBER): str,
+                vol.Optional(
+                    CONF_SCAN_INTERVAL_HOURS, default=DEFAULT_SCAN_INTERVAL_HOURS
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL_HOURS)),
             }
         )
 
         return self.async_show_form(
             step_id="user", data_schema=schema, errors=errors
+        )
+
+
+class CEBOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options for CEB integration."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_interval = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL_HOURS,
+            self.config_entry.data.get(CONF_SCAN_INTERVAL_HOURS, DEFAULT_SCAN_INTERVAL_HOURS),
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_SCAN_INTERVAL_HOURS,
+                        default=current_interval,
+                    ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL_HOURS)),
+                }
+            ),
         )
 
 
