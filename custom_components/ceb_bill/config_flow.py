@@ -44,7 +44,7 @@ class CEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         """Get options flow for this handler."""
-        return CEBOptionsFlowHandler(config_entry)
+        return CEBOptionsFlowHandler()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -83,10 +83,6 @@ class CEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class CEBOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options for CEB integration."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
