@@ -23,11 +23,16 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the CEB sensor from config entry."""
+    """Set up the CEB sensors from config entry."""
     coordinator: CEBBillCoordinator = hass.data[DOMAIN][entry.entry_id]
     account_no = entry.data[CONF_ACCOUNT_NUMBER]
 
-    async_add_entities([CEBBillSensor(coordinator, account_no, entry.entry_id)])
+    async_add_entities(
+        [
+            CEBBillSensor(coordinator, account_no, entry.entry_id),
+            CEBConnectionStatusSensor(coordinator, account_no, entry.entry_id),
+        ]
+    )
 
 
 class CEBBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntity):
@@ -75,4 +80,61 @@ class CEBBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntity):
             "account_number": self._account_number,
             "customer_name": self.coordinator.data.get("customer_name"),
             "bill_date": self.coordinator.data.get("bill_date"),
+            "status": self.coordinator.data.get("status"),
+            "last_synced": self.coordinator.data.get("last_synced"),
+        }
+
+
+class CEBConnectionStatusSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntity):
+    """Representation of CEB Electricity Connection Status Sensor."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "connection_status"
+
+    def __init__(
+        self,
+        coordinator: CEBBillCoordinator,
+        account_number: str,
+        entry_id: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._attr_unique_id = f"ceb_status_{account_number}"
+        self._attr_name = "Connection Status"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, account_number)},
+            name=f"CEB Account {account_number}",
+            manufacturer="Ceylon Electricity Board",
+            model="InstantPay Bill Account",
+            entry_type=None,
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Return the current connection status."""
+        if self.coordinator.data:
+            return self.coordinator.data.get("status", "Active")
+        return "Unknown"
+
+    @property
+    def icon(self) -> str:
+        """Return dynamic icon based on status."""
+        val = self.native_value.lower()
+        if "active" in val:
+            return "mdi:power-plug"
+        if "inactive" in val or "disconnect" in val:
+            return "mdi:power-plug-off"
+        return "mdi:power-plug-outline"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity attributes."""
+        if not self.coordinator.data:
+            return {}
+        return {
+            "account_number": self._account_number,
+            "customer_name": self.coordinator.data.get("customer_name"),
+            "bill_date": self.coordinator.data.get("bill_date"),
+            "last_synced": self.coordinator.data.get("last_synced"),
         }

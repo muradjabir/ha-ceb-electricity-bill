@@ -105,6 +105,7 @@ def fetch_ceb_bill_sync(account_no: str) -> dict:
         "balance": balance,
         "customer_name": customer_name,
         "bill_date": bill_date,
+        "status": "Active" if customer_name and balance is not None else "Inactive",
         "last_synced": datetime.now().isoformat(),
     }
 
