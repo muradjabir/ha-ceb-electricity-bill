@@ -17,12 +17,10 @@ This custom component pulls bill details daily from the official [CEB InstantPay
 - **Multiple Accounts:** Track multiple CEB electricity connections in the same Home Assistant instance.
 - **Entities Provided per Account:**
   - `sensor.electricity_bill_balance`: Current bill balance in `LKR` (`monetary` device class).
-  - `sensor.connection_status`: Live connection status (`Active` / `Inactive`).
 - **Rich Attributes:**
   - `account_number`: Your 10-digit CEB account number
   - `customer_name`: Name registered with CEB
   - `bill_date`: Date of the latest issued bill
-  - `status`: Connection status
   - `last_synced`: Timestamp of last sync
 
 ---

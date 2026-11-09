@@ -34,9 +34,6 @@
     "sensor": {
       "bill_balance": {
         "name": "Electricity Bill Balance"
-      },
-      "connection_status": {
-        "name": "Connection Status"
       }
     }
   }

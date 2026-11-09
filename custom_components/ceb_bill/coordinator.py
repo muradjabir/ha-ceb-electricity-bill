@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
 import re
-import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -12,7 +11,7 @@ from bs4 import BeautifulSoup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, DEFAULT_SCAN_INTERVAL_HOURS, CACHE_TTL_SECONDS
+from .const import DEFAULT_SCAN_INTERVAL_HOURS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,13 +104,12 @@ def fetch_ceb_bill_sync(account_no: str) -> dict:
         "balance": balance,
         "customer_name": customer_name,
         "bill_date": bill_date,
-        "status": "Active" if customer_name and balance is not None else "Inactive",
         "last_synced": datetime.now().isoformat(),
     }
 
 
 class CEBBillCoordinator(DataUpdateCoordinator[dict]):
-    """Class to manage fetching CEB bill data from the portal with caching and throttling."""
+    """Class to manage fetching CEB bill data from the portal."""
 
     def __init__(
         self,
@@ -127,32 +125,14 @@ class CEBBillCoordinator(DataUpdateCoordinator[dict]):
             update_interval=timedelta(hours=scan_interval_hours),
         )
         self.account_number = account_number
-        self._last_fetch_time: float = 0
-        self._cached_data: dict | None = None
 
     async def _async_update_data(self) -> dict:
-        """Fetch data from CEB portal in executor with anti-hammer caching."""
-        now = time.monotonic()
-        # Protect upstream CEB site: If last successful fetch was within cache TTL, reuse cached data
-        if self._cached_data and (now - self._last_fetch_time < CACHE_TTL_SECONDS):
-            _LOGGER.debug(
-                "CEB Bill (%s): Using cached data to prevent overloading portal (%d seconds remaining in TTL)",
-                self.account_number,
-                int(CACHE_TTL_SECONDS - (now - self._last_fetch_time)),
-            )
-            return self._cached_data
-
+        """Fetch data from CEB portal in executor."""
         try:
-            data = await self.hass.async_add_executor_job(
+            return await self.hass.async_add_executor_job(
                 fetch_ceb_bill_sync, self.account_number
             )
-            self._cached_data = data
-            self._last_fetch_time = time.monotonic()
-            return data
+        except ValueError as err:
+            raise UpdateFailed(f"CEB portal layout changed: {err}") from err
         except Exception as err:
-            if self._cached_data:
-                _LOGGER.warning(
-                    "Error refreshing CEB portal data: %s. Using cached data.", err
-                )
-                return self._cached_data
             raise UpdateFailed(f"Error communicating with CEB portal: {err}") from err
