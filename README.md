@@ -16,14 +16,15 @@ This custom component pulls official bill balance details daily from the [CEB In
 - **Configurable Energy Entity:** Select any Home Assistant entity (utility meter, smart meter, or energy sensor) providing kWh consumption to automatically calculate your live monthly bill.
 - **Configurable Monthly Billing Date:** Select the day of the month (1 - 31) when your CEB meter is read. The integration automatically determines the billing cycle, elapsed days, days remaining, and applies PUCSL-mandated 30-day block limit proration.
 - **Manual Consumption Input:** A built-in number entity (`Electricity Consumption Input`) allows you to type or simulate any kWh consumption directly from your dashboard without needing an external sensor.
-- **Accurate PUCSL Tariff Calculation:**
-  - Implements the subsidized low-user tariff (for consumption $\le 60$ kWh) and progressive non-subsidized slabs (for consumption $> 60$ kWh).
-  - Includes energy charges, fixed charges, and the 2.5% Social Security Contribution Levy (SSCL).
+- **Accurate PUCSL Tariff Calculation (Effective May 11, 2026):**
+  - Implements the official 3-band PUCSL Domestic Tariff (Band 1: 0–60 kWh subsidized, Band 2: 61–180 kWh, Band 3: >180 kWh) directly matching the official PUCSL calculator.
+  - Includes energy charges, fixed charges, and the grossed-up 2.5% Social Security Contribution Levy (SSCL).
 - **Entities Provided per Account:**
   - `sensor.electricity_bill_balance`: Official outstanding bill balance in `LKR` (`monetary` device class).
-  - `sensor.calculated_electricity_bill`: Real-time calculated bill based on consumption and billing date (`monetary` device class).
+  - `sensor.calculated_electricity_bill`: Real-time calculated bill based on cycle consumption and billing date (`monetary` device class).
+  - `sensor.predicted_electricity_bill`: Projected month-end bill based on your average daily consumption rate (`monetary` device class).
   - `number.electricity_consumption_input`: Configurable manual consumption input in `kWh`.
-- **Rich Attributes on Calculated Bill Sensor:**
+- **Rich Attributes on Calculated & Predicted Bill Sensors:**
   - `kwh_consumed`: Consumption in kWh used for the calculation
   - `kwh_entity`: Source entity used for the calculation
   - `billing_day`: Selected meter reading day of the month (1 - 31)
@@ -31,9 +32,10 @@ This custom component pulls official bill balance details daily from the [CEB In
   - `days_in_cycle`, `days_elapsed`, `days_remaining`
   - `energy_charge`: Total energy charge component in LKR
   - `fixed_charge`: Applicable monthly fixed charge in LKR
-  - `sscl_charge`: 2.5% Social Security Contribution Levy in LKR
+  - `sscl_charge`: Grossed-up 2.5% Social Security Contribution Levy in LKR
   - `charge_breakdown`: Detailed block-by-block breakdown of units, rates, and costs
-  - `tier_applied`: `low_user` ($\le 60$ units) or `normal_user` ($> 60$ units)
+  - `tier_applied`: `band_1_subsidized`, `band_2_normal`, or `band_3_heavy`
+  - `average_daily_kwh`, `predicted_kwh`, & `predicted_bill`: Burn rate and month-end projection
 
 ---
 
