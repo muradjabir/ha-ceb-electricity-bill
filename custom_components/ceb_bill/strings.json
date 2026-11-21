@@ -53,6 +53,9 @@
       },
       "calculated_bill": {
         "name": "Calculated Electricity Bill"
+      },
+      "predicted_bill": {
+        "name": "Predicted Electricity Bill"
       }
     },
     "number": {

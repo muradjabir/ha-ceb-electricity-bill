@@ -168,3 +168,33 @@ def calculate_ceb_bill(
         "proration_factor": round(p, 4),
         "charge_breakdown": breakdown,
     }
+
+
+def calculate_predicted_consumption(
+    kwh_consumed: float,
+    days_in_cycle: int,
+    days_elapsed_seconds: float,
+) -> dict[str, float]:
+    """Calculate average daily consumption and projected cycle kWh.
+
+    Args:
+        kwh_consumed: Units consumed so far in the current billing cycle.
+        days_in_cycle: Total days in the billing cycle (typically 28 to 31).
+        days_elapsed_seconds: Number of seconds elapsed since the start of the cycle.
+
+    Returns:
+        Dictionary with average_daily_kwh, predicted_kwh, and days_elapsed_fractional.
+    """
+    units = max(0.0, float(kwh_consumed))
+    effective_seconds = max(3600.0, float(days_elapsed_seconds))
+    days_elapsed_frac = effective_seconds / 86400.0
+
+    avg_daily_kwh = units / days_elapsed_frac
+    predicted_kwh = round(avg_daily_kwh * days_in_cycle, 2)
+
+    return {
+        "average_daily_kwh": round(avg_daily_kwh, 2),
+        "predicted_kwh": predicted_kwh,
+        "days_elapsed_fractional": round(days_elapsed_frac, 2),
+    }
+

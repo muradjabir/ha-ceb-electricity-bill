@@ -29,7 +29,11 @@ if "homeassistant" not in sys.modules:
 from datetime import date
 import unittest
 
-from custom_components.ceb_bill.calculator import calculate_ceb_bill, get_billing_cycle
+from custom_components.ceb_bill.calculator import (
+    calculate_ceb_bill,
+    calculate_predicted_consumption,
+    get_billing_cycle,
+)
 
 
 class TestCEBCalculator(unittest.TestCase):
@@ -145,6 +149,25 @@ class TestCEBCalculator(unittest.TestCase):
         res = calculate_ceb_bill(-10, days_in_cycle=30, prorate=False)
         self.assertEqual(res["kwh_consumed"], 0.0)
         self.assertEqual(res["energy_charge"], 0.00)
+
+    def test_calculate_predicted_consumption(self) -> None:
+        """Test daily average and projected kWh for cycle."""
+        # 10 days elapsed (864,000s), 100 kWh consumed in 30-day cycle
+        res = calculate_predicted_consumption(100.0, days_in_cycle=30, days_elapsed_seconds=864000.0)
+        self.assertEqual(res["average_daily_kwh"], 10.0)
+        self.assertEqual(res["predicted_kwh"], 300.0)
+
+        # Projected bill for 300 kWh
+        bill = calculate_ceb_bill(res["predicted_kwh"], days_in_cycle=30)
+        self.assertEqual(bill["tier_applied"], "normal_user")
+        self.assertGreater(bill["total_bill"], 10000.0)
+
+    def test_calculate_predicted_consumption_clamp_seconds(self) -> None:
+        """Test elapsed seconds clamped to minimum 1 hour to prevent ZeroDivisionError."""
+        res = calculate_predicted_consumption(1.0, days_in_cycle=30, days_elapsed_seconds=0.0)
+        self.assertGreater(res["average_daily_kwh"], 0.0)
+        self.assertGreater(res["predicted_kwh"], 0.0)
+
 
 
 if __name__ == "__main__":

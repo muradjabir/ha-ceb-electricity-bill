@@ -19,7 +19,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .calculator import calculate_ceb_bill, get_billing_cycle
+from .calculator import (
+    calculate_ceb_bill,
+    calculate_predicted_consumption,
+    get_billing_cycle,
+)
 from .const import (
     DOMAIN,
     CONF_ACCOUNT_NUMBER,
@@ -54,16 +58,25 @@ async def async_setup_entry(
         CONF_IS_CUMULATIVE, entry.data.get(CONF_IS_CUMULATIVE)
     )
 
+    calculated_sensor = CEBCalculatedBillSensor(
+        coordinator,
+        account_no,
+        entry.entry_id,
+        kwh_entity_id,
+        billing_day,
+        is_cumulative,
+    )
+    predicted_sensor = CEBPredictedBillSensor(
+        coordinator,
+        account_no,
+        entry.entry_id,
+        calculated_sensor,
+    )
+
     entities: list[SensorEntity] = [
         CEBBillSensor(coordinator, account_no, entry.entry_id),
-        CEBCalculatedBillSensor(
-            coordinator,
-            account_no,
-            entry.entry_id,
-            kwh_entity_id,
-            billing_day,
-            is_cumulative,
-        ),
+        calculated_sensor,
+        predicted_sensor,
     ]
 
     async_add_entities(entities)
@@ -302,6 +315,23 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], RestoreSens
 
         bill = calculate_ceb_bill(kwh, days_in_cycle=cycle["days_in_cycle"])
 
+        # Calculate predicted bill based on average daily consumption
+        try:
+            from homeassistant.util import dt as dt_util
+            tz = dt_util.get_time_zone(self.hass.config.time_zone) or dt_util.DEFAULT_TIME_ZONE
+            start_dt = datetime.combine(cycle["cycle_start"], datetime.min.time()).replace(tzinfo=tz)
+            now_dt = datetime.now(tz)
+            elapsed_seconds = (now_dt - start_dt).total_seconds()
+        except Exception:
+            elapsed_seconds = max(1.0, float(cycle["days_elapsed"])) * 86400.0
+
+        prediction_data = calculate_predicted_consumption(
+            kwh, cycle["days_in_cycle"], elapsed_seconds
+        )
+        predicted_bill = calculate_ceb_bill(
+            prediction_data["predicted_kwh"], days_in_cycle=cycle["days_in_cycle"]
+        )
+
         source_entity = (
             self._kwh_entity_id
             if self._kwh_entity_id
@@ -320,9 +350,20 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], RestoreSens
                 else None
             ),
             "is_cumulative": is_cumul,
+            "average_daily_kwh": prediction_data["average_daily_kwh"],
+            "predicted_kwh": prediction_data["predicted_kwh"],
+            "predicted_bill": predicted_bill["total_bill"],
+            "predicted_energy_charge": predicted_bill["energy_charge"],
+            "predicted_fixed_charge": predicted_bill["fixed_charge"],
+            "predicted_sscl_charge": predicted_bill["sscl_charge"],
+            "predicted_tier_applied": predicted_bill["tier_applied"],
+            "predicted_charge_breakdown": predicted_bill["charge_breakdown"],
             "tariff_category": "Domestic (D-1)",
             "last_calculated": datetime.now().isoformat(),
         }
+
+        if hasattr(self.coordinator, "predicted_bill_sensor") and self.coordinator.predicted_bill_sensor:
+            self.coordinator.predicted_bill_sensor.async_write_ha_state()
 
     async def async_update(self) -> None:
         """Update sensor state."""
@@ -357,5 +398,78 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], RestoreSens
             "tier_applied": self._calc_result.get("tier_applied"),
             "tariff_category": self._calc_result.get("tariff_category"),
             "charge_breakdown": self._calc_result.get("charge_breakdown"),
+            "average_daily_kwh": self._calc_result.get("average_daily_kwh"),
+            "predicted_kwh": self._calc_result.get("predicted_kwh"),
+            "predicted_bill": self._calc_result.get("predicted_bill"),
             "last_calculated": self._calc_result.get("last_calculated"),
+        }
+
+
+class CEBPredictedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntity):
+    """Predicted CEB Electricity Bill sensor based on average daily consumption."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "predicted_bill"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = "LKR"
+    _attr_icon = "mdi:chart-line"
+
+    def __init__(
+        self,
+        coordinator: CEBBillCoordinator,
+        account_number: str,
+        entry_id: str,
+        calculated_sensor: CEBCalculatedBillSensor,
+    ) -> None:
+        """Initialize the predicted bill sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._entry_id = entry_id
+        self._calc_sensor = calculated_sensor
+        self._attr_unique_id = f"ceb_bill_{account_number}_predicted_bill"
+        self._attr_name = "Predicted Electricity Bill"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, account_number)},
+            name=f"CEB Account {account_number}",
+            manufacturer="Ceylon Electricity Board",
+            model="InstantPay Bill Account",
+            entry_type=None,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Link sensor to coordinator."""
+        await super().async_added_to_hass()
+        self.coordinator.predicted_bill_sensor = self
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the predicted bill in LKR."""
+        return self._calc_sensor._calc_result.get("predicted_bill")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed prediction attributes."""
+        res = self._calc_sensor._calc_result
+        cycle_start = res.get("cycle_start")
+        cycle_end = res.get("cycle_end")
+        return {
+            "account_number": self._account_number,
+            "predicted_kwh": res.get("predicted_kwh"),
+            "average_daily_kwh": res.get("average_daily_kwh"),
+            "kwh_consumed_to_date": res.get("kwh_consumed"),
+            "kwh_entity": res.get("kwh_entity"),
+            "billing_day": res.get("billing_day"),
+            "billing_cycle_start": cycle_start.isoformat() if hasattr(cycle_start, "isoformat") else cycle_start,
+            "billing_cycle_end": cycle_end.isoformat() if hasattr(cycle_end, "isoformat") else cycle_end,
+            "days_in_cycle": res.get("days_in_cycle"),
+            "days_elapsed": res.get("days_elapsed"),
+            "days_remaining": res.get("days_remaining"),
+            "predicted_energy_charge": res.get("predicted_energy_charge"),
+            "predicted_fixed_charge": res.get("predicted_fixed_charge"),
+            "predicted_sscl_charge": res.get("predicted_sscl_charge"),
+            "tier_applied": res.get("predicted_tier_applied"),
+            "tariff_category": res.get("tariff_category"),
+            "charge_breakdown": res.get("predicted_charge_breakdown"),
+            "last_calculated": res.get("last_calculated"),
         }
