@@ -1,11 +1,17 @@
-"""Tariff and billing cycle calculations for Ceylon Electricity Board (CEB)."""
+"""Tariff and billing cycle calculations for Ceylon Electricity Board (CEB) / EDL.
+
+Exact 1-to-1 Python implementation of the official PUCSL Electricity Bill Calculator:
+https://www.pucsl.gov.lk/calculator/js/calculator.js
+Approved Tariff Effective from 11 May 2026.
+"""
 from __future__ import annotations
 
 import calendar
 from datetime import date
+import math
 from typing import Any
 
-from .const import DEFAULT_BILLING_DAY, SSCL_RATE
+from .const import DEFAULT_BILLING_DAY
 
 
 def _clamp_day(year: int, month: int, day: int) -> int:
@@ -65,107 +71,109 @@ def calculate_ceb_bill(
     days_in_cycle: int = 30,
     prorate: bool = True,
 ) -> dict[str, Any]:
-    """Calculate the CEB domestic electricity bill for a given kWh consumption.
+    """Calculate the CEB / EDL domestic electricity bill for a given kWh consumption.
 
-    Follows the official PUCSL approved Domestic Tariff (Category D-1)
-    Increasing Block Tariff schedule with proration for billing cycle length.
+    Directly replicates the official PUCSL calculator logic:
+    https://www.pucsl.gov.lk/calculator/js/calculator.js
+    Approved Tariff Effective from 11 May 2026.
 
     Args:
         kwh: Total energy consumed in the billing cycle (kWh).
         days_in_cycle: Number of days in the billing cycle.
-        prorate: Whether to prorate block limits and fixed charges based on a 30-day base.
+        prorate: Whether to prorate block limits based on billing cycle days.
 
     Returns:
-        Dictionary with breakdown of energy charge, fixed charge, SSCL, and total bill.
+        Dictionary with energy charge, fixed charge, SSCL levy, and total bill.
     """
     units = max(0.0, float(kwh))
-    p = (days_in_cycle / 30.0) if (prorate and days_in_cycle > 0) else 1.0
+    billing_days = max(1, int(days_in_cycle)) if prorate else 30
 
-    threshold_60 = 60.0 * p
+    # Official PUCSL block limit proration formula
+    block30 = math.floor(30 * billing_days / 30)
+    block60 = math.floor(60 * billing_days / 30)
+    block90 = math.floor(90 * billing_days / 30)
+    block120 = math.floor(120 * billing_days / 30)
+    block180 = math.floor(180 * billing_days / 30)
+
+    energy_charge = 0.0
+    fixed_charge = 0.0
     breakdown: list[dict[str, Any]] = []
 
-    if units <= threshold_60:
-        tier_applied = "low_user"
-        limit_30 = 30.0 * p
+    if units <= block60:
+        band = "Band 1 (0-60 kWh Subsidized)"
+        tier_applied = "band_1_subsidized"
 
-        # Block 1: 0 - 30 units
-        u1 = min(units, limit_30)
-        c1 = u1 * 6.00
-        breakdown.append({"block": "0-30", "units": round(u1, 2), "rate": 6.00, "cost": round(c1, 2)})
+        b1 = min(units, block30)
+        b2 = max(units - block30, 0.0)
 
-        # Block 2: 31 - 60 units
-        u2 = max(0.0, units - limit_30)
-        c2 = u2 * 9.00
-        if u2 > 0 or units > 0:
-            breakdown.append({"block": "31-60", "units": round(u2, 2), "rate": 9.00, "cost": round(c2, 2)})
+        energy_charge += b1 * 5.0
+        energy_charge += b2 * 9.0
 
-        energy_charge = c1 + c2
+        fixed_charge = 80.0 if units <= block30 else 210.0
 
-        # Fixed charge for low users
-        if units <= limit_30:
-            fixed_charge = 100.00 * p
+        breakdown.append({"block": f"0-{block30}", "units": round(b1, 2), "rate": 5.0, "cost": round(b1 * 5.0, 2)})
+        if b2 > 0:
+            breakdown.append({"block": f"{block30 + 1}-{block60}", "units": round(b2, 2), "rate": 9.0, "cost": round(b2 * 9.0, 2)})
+
+    elif units <= block180:
+        band = "Band 2 (61-180 kWh)"
+        tier_applied = "band_2_normal"
+
+        b1 = min(units, block60)
+        b2 = max(min(units, block90) - block60, 0.0)
+        b3 = max(min(units, block120) - block90, 0.0)
+        b4 = max(units - block120, 0.0)
+
+        energy_charge += b1 * 14.0
+        energy_charge += b2 * 20.0
+        energy_charge += b3 * 28.0
+        energy_charge += b4 * 44.0
+
+        if units <= block90:
+            fixed_charge = 400.0
+        elif units <= block120:
+            fixed_charge = 1000.0
         else:
-            fixed_charge = 250.00 * p
+            fixed_charge = 1500.0
+
+        breakdown.append({"block": f"0-{block60}", "units": round(b1, 2), "rate": 14.0, "cost": round(b1 * 14.0, 2)})
+        if b2 > 0:
+            breakdown.append({"block": f"{block60 + 1}-{block90}", "units": round(b2, 2), "rate": 20.0, "cost": round(b2 * 20.0, 2)})
+        if b3 > 0:
+            breakdown.append({"block": f"{block90 + 1}-{block120}", "units": round(b3, 2), "rate": 28.0, "cost": round(b3 * 28.0, 2)})
+        if b4 > 0:
+            breakdown.append({"block": f"{block120 + 1}-{block180}", "units": round(b4, 2), "rate": 44.0, "cost": round(b4 * 44.0, 2)})
 
     else:
-        tier_applied = "normal_user"
-        limit_60 = 60.0 * p
-        limit_90 = 90.0 * p
-        limit_120 = 120.0 * p
-        limit_180 = 180.0 * p
+        band = "Band 3 (>180 kWh)"
+        tier_applied = "band_3_heavy"
 
-        # Tier 1: 0 - 60 units @ 15.00
-        u1 = min(units, limit_60)
-        c1 = u1 * 15.00
-        breakdown.append({"block": "0-60", "units": round(u1, 2), "rate": 15.00, "cost": round(c1, 2)})
+        first_tier = float(block180)
+        second_tier = max(0.0, units - block180)
 
-        # Tier 2: 61 - 90 units @ 18.00
-        u2 = min(max(0.0, units - limit_60), 30.0 * p)
-        c2 = u2 * 18.00
-        breakdown.append({"block": "61-90", "units": round(u2, 2), "rate": 18.00, "cost": round(c2, 2)})
+        energy_charge += first_tier * 32.50
+        energy_charge += second_tier * 100.00
 
-        # Tier 3: 91 - 120 units @ 30.00
-        u3 = min(max(0.0, units - limit_90), 30.0 * p)
-        c3 = u3 * 30.00
-        if u3 > 0 or units > limit_90:
-            breakdown.append({"block": "91-120", "units": round(u3, 2), "rate": 30.00, "cost": round(c3, 2)})
+        fixed_charge = 2500.0
 
-        # Tier 4: 121 - 180 units @ 42.00
-        u4 = min(max(0.0, units - limit_120), 60.0 * p)
-        c4 = u4 * 42.00
-        if u4 > 0 or units > limit_120:
-            breakdown.append({"block": "121-180", "units": round(u4, 2), "rate": 42.00, "cost": round(c4, 2)})
-
-        # Tier 5: Above 180 units @ 65.00
-        u5 = max(0.0, units - limit_180)
-        c5 = u5 * 65.00
-        if u5 > 0:
-            breakdown.append({"block": ">180", "units": round(u5, 2), "rate": 65.00, "cost": round(c5, 2)})
-
-        energy_charge = c1 + c2 + c3 + c4 + c5
-
-        # Fixed charge for normal users
-        if units <= limit_90:
-            fixed_charge = 400.00 * p
-        elif units <= limit_120:
-            fixed_charge = 1000.00 * p
-        elif units <= limit_180:
-            fixed_charge = 1500.00 * p
-        else:
-            fixed_charge = 2000.00 * p
+        breakdown.append({"block": f"0-{block180}", "units": round(first_tier, 2), "rate": 32.50, "cost": round(first_tier * 32.50, 2)})
+        breakdown.append({"block": f">{block180}", "units": round(second_tier, 2), "rate": 100.00, "cost": round(second_tier * 100.00, 2)})
 
     subtotal = energy_charge + fixed_charge
-    sscl_charge = subtotal * SSCL_RATE
+    # Statutory grossed-up SSCL levy: Subtotal * 2.5 / 97.5 (~2.5641%)
+    sscl_charge = (subtotal * 2.5) / 97.5
     total_bill = subtotal + sscl_charge
 
     return {
         "kwh_consumed": round(units, 2),
         "energy_charge": round(energy_charge, 2),
         "fixed_charge": round(fixed_charge, 2),
+        "subtotal": round(subtotal, 2),
         "sscl_charge": round(sscl_charge, 2),
         "total_bill": round(total_bill, 2),
         "tier_applied": tier_applied,
-        "proration_factor": round(p, 4),
+        "band": band,
+        "days_in_cycle": billing_days,
         "charge_breakdown": breakdown,
     }
 
@@ -197,4 +205,3 @@ def calculate_predicted_consumption(
         "predicted_kwh": predicted_kwh,
         "days_elapsed_fractional": round(days_elapsed_frac, 2),
     }
-
