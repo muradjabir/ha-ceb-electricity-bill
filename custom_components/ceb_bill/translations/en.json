@@ -8,11 +8,13 @@
           "account_number": "Account Number (10 digits)",
           "scan_interval_hours": "Update Interval in Hours (minimum 12 hours)",
           "kwh_entity": "kWh Consumed Entity (optional)",
-          "billing_day": "Monthly Billing Day (1 - 31)"
+          "billing_day": "Monthly Billing Day (1 - 31)",
+          "is_cumulative": "Cumulative Energy Sensor (Lifetime Total kWh)"
         },
         "data_description": {
           "kwh_entity": "Entity providing electricity consumption in kWh (e.g. utility meter or energy sensor) for bill calculation.",
-          "billing_day": "Day of the month your CEB meter is read and your billing cycle resets (1 - 31)."
+          "billing_day": "Day of the month your CEB meter is read and your billing cycle resets (1 - 31).",
+          "is_cumulative": "Enable if the selected kWh entity accumulates total lifetime energy (e.g. solar inverter grid import). Current cycle consumption is calculated starting from your billing day using Home Assistant statistics. Disable if the entity already resets each cycle (e.g. monthly utility meter) or is a manual input."
         }
       }
     },
@@ -33,11 +35,13 @@
         "data": {
           "scan_interval_hours": "Update Interval in Hours (minimum 12 hours)",
           "kwh_entity": "kWh Consumed Entity (optional)",
-          "billing_day": "Monthly Billing Day (1 - 31)"
+          "billing_day": "Monthly Billing Day (1 - 31)",
+          "is_cumulative": "Cumulative Energy Sensor (Lifetime Total kWh)"
         },
         "data_description": {
           "kwh_entity": "Entity providing electricity consumption in kWh for bill calculation. Leave empty to use manual input.",
-          "billing_day": "Day of the month your CEB meter is read and your billing cycle resets (1 - 31)."
+          "billing_day": "Day of the month your CEB meter is read and your billing cycle resets (1 - 31).",
+          "is_cumulative": "Enable if the selected kWh entity accumulates total lifetime energy (e.g. solar inverter grid import). Current cycle consumption is calculated starting from your billing day using Home Assistant statistics. Disable if the entity already resets each cycle (e.g. monthly utility meter) or is a manual input."
         }
       }
     }

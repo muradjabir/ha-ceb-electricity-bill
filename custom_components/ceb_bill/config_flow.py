@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
@@ -24,9 +25,11 @@ from .const import (
     CONF_SCAN_INTERVAL_HOURS,
     CONF_KWH_ENTITY,
     CONF_BILLING_DAY,
+    CONF_IS_CUMULATIVE,
     DEFAULT_SCAN_INTERVAL_HOURS,
     MIN_SCAN_INTERVAL_HOURS,
     DEFAULT_BILLING_DAY,
+    DEFAULT_IS_CUMULATIVE,
 )
 from .coordinator import fetch_ceb_bill_sync
 
@@ -95,6 +98,9 @@ class CEBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): NumberSelector(
                     NumberSelectorConfig(min=1, max=31, mode=NumberSelectorMode.BOX)
                 ),
+                vol.Optional(
+                    CONF_IS_CUMULATIVE, default=DEFAULT_IS_CUMULATIVE
+                ): BooleanSelector(),
             }
         )
 
@@ -128,6 +134,10 @@ class CEBOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_BILLING_DAY,
             self.config_entry.data.get(CONF_BILLING_DAY, DEFAULT_BILLING_DAY),
         )
+        current_is_cumulative = self.config_entry.options.get(
+            CONF_IS_CUMULATIVE,
+            self.config_entry.data.get(CONF_IS_CUMULATIVE, DEFAULT_IS_CUMULATIVE),
+        )
 
         schema = vol.Schema(
             {
@@ -147,6 +157,10 @@ class CEBOptionsFlowHandler(config_entries.OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(min=1, max=31, mode=NumberSelectorMode.BOX)
                 ),
+                vol.Optional(
+                    CONF_IS_CUMULATIVE,
+                    default=current_is_cumulative,
+                ): BooleanSelector(),
             }
         )
 
@@ -158,4 +172,4 @@ class CannotConnect(HomeAssistantError):
 
 
 class InvalidAccountNumber(HomeAssistantError):
-    """Error to indicate account number is invalid."""
+    """Error to indicate there is an invalid account number."""

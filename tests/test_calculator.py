@@ -116,6 +116,23 @@ class TestCEBCalculator(unittest.TestCase):
         self.assertEqual(res["sscl_charge"], 127.50)
         self.assertEqual(res["total_bill"], 5227.50)
 
+    def test_calculate_cycle_delta_vs_cumulative(self) -> None:
+        """Test difference between cumulative lifetime reading and monthly cycle delta."""
+        cumulative_reading = 764.96
+        cycle_start_reading = 594.63
+        cycle_kwh = cumulative_reading - cycle_start_reading  # 170.33 kWh
+
+        # Raw cumulative reading evaluates to ~46,000 LKR
+        res_cumulative = calculate_ceb_bill(cumulative_reading, days_in_cycle=30)
+        self.assertEqual(res_cumulative["total_bill"], 46004.46)
+
+        # Actual cycle delta consumption evaluates to ~6,102.71 LKR
+        res_cycle = calculate_ceb_bill(cycle_kwh, days_in_cycle=30)
+        self.assertEqual(res_cycle["kwh_consumed"], 170.33)
+        self.assertEqual(res_cycle["energy_charge"], 4453.86)
+        self.assertEqual(res_cycle["fixed_charge"], 1500.00)
+        self.assertEqual(res_cycle["total_bill"], 6102.71)
+
     def test_calculate_zero_kwh(self) -> None:
         """Test zero kWh consumption."""
         res = calculate_ceb_bill(0, days_in_cycle=30, prorate=False)

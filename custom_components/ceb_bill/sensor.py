@@ -1,11 +1,12 @@
 """Sensor platform for CEB Electricity Bill integration."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -24,6 +25,7 @@ from .const import (
     CONF_ACCOUNT_NUMBER,
     CONF_KWH_ENTITY,
     CONF_BILLING_DAY,
+    CONF_IS_CUMULATIVE,
     DEFAULT_BILLING_DAY,
 )
 from .coordinator import CEBBillCoordinator
@@ -48,10 +50,20 @@ async def async_setup_entry(
             CONF_BILLING_DAY, entry.data.get(CONF_BILLING_DAY, DEFAULT_BILLING_DAY)
         )
     )
+    is_cumulative = entry.options.get(
+        CONF_IS_CUMULATIVE, entry.data.get(CONF_IS_CUMULATIVE)
+    )
 
     entities: list[SensorEntity] = [
         CEBBillSensor(coordinator, account_no, entry.entry_id),
-        CEBCalculatedBillSensor(coordinator, account_no, entry.entry_id, kwh_entity_id, billing_day),
+        CEBCalculatedBillSensor(
+            coordinator,
+            account_no,
+            entry.entry_id,
+            kwh_entity_id,
+            billing_day,
+            is_cumulative,
+        ),
     ]
 
     async_add_entities(entities)
@@ -107,7 +119,7 @@ class CEBBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntity):
         }
 
 
-class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntity):
+class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], RestoreSensor):
     """Calculated CEB Electricity Bill sensor based on kWh consumed and billing cycle."""
 
     _attr_has_entity_name = True
@@ -124,6 +136,7 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntit
         entry_id: str,
         kwh_entity_id: str | None,
         billing_day: int,
+        is_cumulative: bool | None = None,
     ) -> None:
         """Initialize the calculated bill sensor."""
         super().__init__(coordinator)
@@ -131,6 +144,9 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntit
         self._entry_id = entry_id
         self._kwh_entity_id = kwh_entity_id
         self._billing_day = billing_day
+        self._is_cumulative = is_cumulative
+        self._cycle_start_kwh: float | None = None
+        self._cycle_start_date: str | None = None
         self._attr_unique_id = f"ceb_bill_{account_number}_calculated_bill"
         self._attr_name = "Calculated Electricity Bill"
         self._attr_device_info = DeviceInfo(
@@ -143,15 +159,28 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntit
         self._calc_result: dict[str, Any] = {}
 
     async def async_added_to_hass(self) -> None:
-        """Register state listener and link sensor to coordinator."""
+        """Register state listener, restore state, and link sensor to coordinator."""
         await super().async_added_to_hass()
         self.coordinator.calculated_bill_sensor = self
 
+        cycle = get_billing_cycle(date.today(), self._billing_day)
+        cycle_start_str = cycle["cycle_start"].isoformat()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            attrs = last_state.attributes
+            restored_start = attrs.get("billing_cycle_start")
+            restored_reading = attrs.get("cycle_start_reading")
+            if restored_start == cycle_start_str and restored_reading is not None:
+                self._cycle_start_date = str(restored_start)
+                try:
+                    self._cycle_start_kwh = float(restored_reading)
+                except (ValueError, TypeError):
+                    self._cycle_start_kwh = None
+
         if self._kwh_entity_id:
-            @callback
-            def _async_on_kwh_state_change(event: Any) -> None:
+            async def _async_on_kwh_state_change(event: Any) -> None:
                 """Handle external sensor state change."""
-                self._update_calculation()
+                await self._async_update_calculation()
                 self.async_write_ha_state()
 
             self.async_on_remove(
@@ -160,24 +189,117 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntit
                 )
             )
 
-        self._update_calculation()
+        await self._async_update_calculation()
 
-    @callback
-    def _update_calculation(self) -> None:
+    async def _async_fetch_cycle_start_reading(self, start_date: date) -> float | None:
+        """Fetch reading at the beginning of the billing cycle from HA recorder statistics."""
+        if not self._kwh_entity_id:
+            return None
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.statistics import statistics_during_period
+            from homeassistant.util import dt as dt_util
+
+            tz = dt_util.get_time_zone(self.hass.config.time_zone) or dt_util.DEFAULT_TIME_ZONE
+            start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=tz)
+
+            def _get_stats():
+                for end in (start_dt + timedelta(hours=6), None):
+                    res = statistics_during_period(
+                        self.hass,
+                        start_dt,
+                        end,
+                        {self._kwh_entity_id},
+                        "hour",
+                        None,
+                        {"state", "sum"},
+                    )
+                    if res and res.get(self._kwh_entity_id):
+                        return res
+                return {}
+
+            recorder_instance = get_instance(self.hass)
+            stats = await recorder_instance.async_add_executor_job(_get_stats)
+            if stats and self._kwh_entity_id in stats and stats[self._kwh_entity_id]:
+                first_row = stats[self._kwh_entity_id][0]
+                val = first_row.get("state")
+                if val is None:
+                    val = first_row.get("sum")
+                if val is not None:
+                    return float(val)
+        except Exception as err:
+            _LOGGER.debug(
+                "Could not fetch recorder statistics for %s: %s",
+                self._kwh_entity_id,
+                err,
+            )
+        return None
+
+    async def _async_update_calculation(self) -> None:
         """Calculate bill from kWh consumption and billing cycle."""
-        kwh: float = 0.0
+        raw_value: float = 0.0
+        unit: str | None = None
+        is_cumul: bool | None = self._is_cumulative
 
         if self._kwh_entity_id:
             state = self.hass.states.get(self._kwh_entity_id)
             if state is not None and state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 try:
-                    kwh = float(state.state)
+                    raw_value = float(state.state)
                 except (ValueError, TypeError):
-                    kwh = 0.0
+                    raw_value = 0.0
+
+                unit = state.attributes.get("unit_of_measurement")
+                if unit == "Wh":
+                    raw_value = raw_value / 1000.0
+                elif unit == "MWh":
+                    raw_value = raw_value * 1000.0
+
+                # Auto-detect if not explicitly configured
+                if is_cumul is None:
+                    state_class = state.attributes.get("state_class")
+                    dev_class = state.attributes.get("device_class")
+                    is_cumul = (
+                        state_class in (
+                            SensorStateClass.TOTAL,
+                            SensorStateClass.TOTAL_INCREASING,
+                            "total",
+                            "total_increasing",
+                        )
+                        or dev_class == SensorDeviceClass.ENERGY
+                    ) and not self._kwh_entity_id.startswith(("number.", "input_number."))
         elif hasattr(self.coordinator, "manual_kwh"):
-            kwh = float(self.coordinator.manual_kwh)
+            raw_value = float(self.coordinator.manual_kwh)
+            if is_cumul is None:
+                is_cumul = False
+
+        if is_cumul is None:
+            is_cumul = False
 
         cycle = get_billing_cycle(date.today(), self._billing_day)
+        cycle_start_str = cycle["cycle_start"].isoformat()
+
+        if is_cumul:
+            # Query baseline if cycle changed or not yet determined
+            if self._cycle_start_date != cycle_start_str or self._cycle_start_kwh is None:
+                baseline = await self._async_fetch_cycle_start_reading(cycle["cycle_start"])
+                if baseline is not None:
+                    if unit == "Wh":
+                        baseline = baseline / 1000.0
+                    elif unit == "MWh":
+                        baseline = baseline * 1000.0
+                    self._cycle_start_kwh = baseline
+                    self._cycle_start_date = cycle_start_str
+                elif self._cycle_start_kwh is None:
+                    self._cycle_start_kwh = raw_value
+                    self._cycle_start_date = cycle_start_str
+                else:
+                    self._cycle_start_date = cycle_start_str
+
+            kwh = max(0.0, raw_value - (self._cycle_start_kwh or 0.0))
+        else:
+            kwh = max(0.0, raw_value)
+
         bill = calculate_ceb_bill(kwh, days_in_cycle=cycle["days_in_cycle"])
 
         source_entity = (
@@ -191,21 +313,29 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntit
             **bill,
             "kwh_entity": source_entity,
             "billing_day": self._billing_day,
+            "raw_reading": round(raw_value, 2),
+            "cycle_start_reading": (
+                round(self._cycle_start_kwh, 2)
+                if is_cumul and self._cycle_start_kwh is not None
+                else None
+            ),
+            "is_cumulative": is_cumul,
             "tariff_category": "Domestic (D-1)",
             "last_calculated": datetime.now().isoformat(),
         }
 
+    async def async_update(self) -> None:
+        """Update sensor state."""
+        await self._async_update_calculation()
+
     @property
     def native_value(self) -> float | None:
         """Return the calculated bill in LKR."""
-        self._update_calculation()
         return self._calc_result.get("total_bill")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed calculation attributes."""
-        if not self._calc_result:
-            self._update_calculation()
         cycle_start = self._calc_result.get("cycle_start")
         cycle_end = self._calc_result.get("cycle_end")
         return {
@@ -213,6 +343,9 @@ class CEBCalculatedBillSensor(CoordinatorEntity[CEBBillCoordinator], SensorEntit
             "kwh_consumed": self._calc_result.get("kwh_consumed"),
             "kwh_entity": self._calc_result.get("kwh_entity"),
             "billing_day": self._calc_result.get("billing_day"),
+            "raw_reading": self._calc_result.get("raw_reading"),
+            "cycle_start_reading": self._calc_result.get("cycle_start_reading"),
+            "is_cumulative": self._calc_result.get("is_cumulative"),
             "billing_cycle_start": cycle_start.isoformat() if hasattr(cycle_start, "isoformat") else cycle_start,
             "billing_cycle_end": cycle_end.isoformat() if hasattr(cycle_end, "isoformat") else cycle_end,
             "days_in_cycle": self._calc_result.get("days_in_cycle"),

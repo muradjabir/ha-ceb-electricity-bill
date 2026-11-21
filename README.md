@@ -69,8 +69,9 @@ This custom component pulls official bill balance details daily from the [CEB In
 4. Fill in the configuration fields:
    - **Account Number (10 digits):** Your CEB account number (e.g. `2792108118`).
    - **Update Interval:** Frequency in hours to check the CEB portal (default: 24, minimum: 12).
-   - **kWh Consumed Entity (optional):** Choose your energy sensor or utility meter (e.g. `sensor.monthly_grid_import`). If left empty, you can use the built-in `number.electricity_consumption_input` entity.
-   - **Monthly Billing Day (1 - 31):** Day of the month your meter is read (e.g. 15).
+   - **kWh Consumed Entity (optional):** Choose your energy sensor or utility meter (e.g. `sensor.home_grid_import_energy` or `sensor.monthly_grid_import`). If left empty, you can use the built-in manual input number entity.
+   - **Monthly Billing Day (1 - 31):** Day of the month your CEB meter is read and billing cycle resets (e.g. 4 or 15).
+   - **Cumulative Energy Sensor:** Enabled by default. When using a cumulative/lifetime energy sensor (e.g. lifetime solar inverter grid import), the integration automatically queries Home Assistant long-term statistics for the meter reading at the start of your billing cycle and computes the cycle consumption. If using an entity that already resets each cycle (such as a monthly utility meter) or manual number input, disable this option.
 5. All settings can be adjusted at any time via **Configure** on the integration card.
 
 ---
