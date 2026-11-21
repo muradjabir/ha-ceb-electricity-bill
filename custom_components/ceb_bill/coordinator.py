@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
 import re
+from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
@@ -125,6 +126,9 @@ class CEBBillCoordinator(DataUpdateCoordinator[dict]):
             update_interval=timedelta(hours=scan_interval_hours),
         )
         self.account_number = account_number
+        self.manual_kwh: float = 0.0
+        self.calculated_bill_sensor: Any = None
+        self.number_entity: Any = None
 
     async def _async_update_data(self) -> dict:
         """Fetch data from CEB portal in executor."""

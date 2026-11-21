@@ -6,7 +6,13 @@
         "description": "Enter your 10-digit CEB Electricity Account Number to track your bill balance.",
         "data": {
           "account_number": "Account Number (10 digits)",
-          "scan_interval_hours": "Update Interval in Hours (minimum 12 hours)"
+          "scan_interval_hours": "Update Interval in Hours (minimum 12 hours)",
+          "kwh_entity": "kWh Consumed Entity (optional)",
+          "billing_day": "Monthly Billing Day (1 - 31)"
+        },
+        "data_description": {
+          "kwh_entity": "Entity providing electricity consumption in kWh (e.g. utility meter or energy sensor) for bill calculation.",
+          "billing_day": "Day of the month your CEB meter is read and your billing cycle resets (1 - 31)."
         }
       }
     },
@@ -23,9 +29,15 @@
     "step": {
       "init": {
         "title": "CEB Integration Options",
-        "description": "Adjust the update polling frequency. To avoid overloading CEB servers, the minimum permitted interval is 12 hours.",
+        "description": "Configure polling interval, consumption entity, and billing cycle date.",
         "data": {
-          "scan_interval_hours": "Update Interval in Hours (minimum 12 hours)"
+          "scan_interval_hours": "Update Interval in Hours (minimum 12 hours)",
+          "kwh_entity": "kWh Consumed Entity (optional)",
+          "billing_day": "Monthly Billing Day (1 - 31)"
+        },
+        "data_description": {
+          "kwh_entity": "Entity providing electricity consumption in kWh for bill calculation. Leave empty to use manual input.",
+          "billing_day": "Day of the month your CEB meter is read and your billing cycle resets (1 - 31)."
         }
       }
     }
@@ -34,6 +46,14 @@
     "sensor": {
       "bill_balance": {
         "name": "Electricity Bill Balance"
+      },
+      "calculated_bill": {
+        "name": "Calculated Electricity Bill"
+      }
+    },
+    "number": {
+      "kwh_consumed_input": {
+        "name": "Electricity Consumption Input"
       }
     }
   }

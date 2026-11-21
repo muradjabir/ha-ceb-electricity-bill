@@ -1,7 +1,6 @@
 """The CEB Electricity Bill integration."""
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,7 +11,7 @@ from .const import DOMAIN, CONF_ACCOUNT_NUMBER, CONF_SCAN_INTERVAL_HOURS, DEFAUL
 from .coordinator import CEBBillCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -39,10 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
-    coordinator: CEBBillCoordinator = hass.data[DOMAIN][entry.entry_id]
-    scan_interval = entry.options.get(CONF_SCAN_INTERVAL_HOURS, DEFAULT_SCAN_INTERVAL_HOURS)
-    coordinator.update_interval = timedelta(hours=scan_interval)
-    _LOGGER.info("Updated CEB scan interval to %d hours", scan_interval)
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

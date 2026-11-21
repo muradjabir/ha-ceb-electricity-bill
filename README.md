@@ -4,24 +4,36 @@
 [![GitHub release](https://img.shields.io/github/v/release/muradjabir/ha-ceb-electricity-bill?style=for-the-badge)](https://github.com/muradjabir/ha-ceb-electricity-bill/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-Track your **Ceylon Electricity Board (CEB)** electricity bill balance and account details directly in Home Assistant.
+Track your **Ceylon Electricity Board (CEB)** electricity bill balance and account details directly in Home Assistant, and calculate your real-time estimated monthly bill based on your actual or manual kWh consumption.
 
-This custom component pulls bill details daily from the official [CEB InstantPay](https://payment.ceb.lk/instantpay) portal with zero credentials required—only your 10-digit account number.
+This custom component pulls official bill balance details daily from the [CEB InstantPay](https://payment.ceb.lk/instantpay) portal with zero credentials required (only your 10-digit account number), and accurately calculates your ongoing electricity bill following the official **PUCSL Domestic Tariff (Category D-1)** including billing cycle proration and Social Security Contribution Levy (SSCL).
 
 ---
 
 ## Features
 
-- **Automatic Daily Updates:** Fetches current outstanding balance once every 24 hours.
-- **Config Flow Setup:** Easy UI configuration directly in Home Assistant (Settings -> Devices & Services -> Add Integration).
-- **Multiple Accounts:** Track multiple CEB electricity connections in the same Home Assistant instance.
+- **Automatic Bill Balance Updates:** Fetches your current outstanding balance from the CEB InstantPay portal.
+- **Configurable Energy Entity:** Select any Home Assistant entity (utility meter, smart meter, or energy sensor) providing kWh consumption to automatically calculate your live monthly bill.
+- **Configurable Monthly Billing Date:** Select the day of the month (1 - 31) when your CEB meter is read. The integration automatically determines the billing cycle, elapsed days, days remaining, and applies PUCSL-mandated 30-day block limit proration.
+- **Manual Consumption Input:** A built-in number entity (`Electricity Consumption Input`) allows you to type or simulate any kWh consumption directly from your dashboard without needing an external sensor.
+- **Accurate PUCSL Tariff Calculation:**
+  - Implements the subsidized low-user tariff (for consumption $\le 60$ kWh) and progressive non-subsidized slabs (for consumption $> 60$ kWh).
+  - Includes energy charges, fixed charges, and the 2.5% Social Security Contribution Levy (SSCL).
 - **Entities Provided per Account:**
-  - `sensor.electricity_bill_balance`: Current bill balance in `LKR` (`monetary` device class).
-- **Rich Attributes:**
-  - `account_number`: Your 10-digit CEB account number
-  - `customer_name`: Name registered with CEB
-  - `bill_date`: Date of the latest issued bill
-  - `last_synced`: Timestamp of last sync
+  - `sensor.electricity_bill_balance`: Official outstanding bill balance in `LKR` (`monetary` device class).
+  - `sensor.calculated_electricity_bill`: Real-time calculated bill based on consumption and billing date (`monetary` device class).
+  - `number.electricity_consumption_input`: Configurable manual consumption input in `kWh`.
+- **Rich Attributes on Calculated Bill Sensor:**
+  - `kwh_consumed`: Consumption in kWh used for the calculation
+  - `kwh_entity`: Source entity used for the calculation
+  - `billing_day`: Selected meter reading day of the month (1 - 31)
+  - `billing_cycle_start` & `billing_cycle_end`: Dates of the active billing cycle
+  - `days_in_cycle`, `days_elapsed`, `days_remaining`
+  - `energy_charge`: Total energy charge component in LKR
+  - `fixed_charge`: Applicable monthly fixed charge in LKR
+  - `sscl_charge`: 2.5% Social Security Contribution Levy in LKR
+  - `charge_breakdown`: Detailed block-by-block breakdown of units, rates, and costs
+  - `tier_applied`: `low_user` ($\le 60$ units) or `normal_user` ($> 60$ units)
 
 ---
 
@@ -31,17 +43,15 @@ This custom component pulls bill details daily from the official [CEB InstantPay
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=muradjabir&repository=ha-ceb-electricity-bill&category=integration)
 
-Click the button above to directly open and install the repository in HACS, or follow the manual steps:
-
 1. In Home Assistant, open **HACS** > **Integrations**.
 2. Click the **three dots** in the top right corner and select **Custom repositories**.
 3. Paste the repository URL:
    ```text
    https://github.com/muradjabir/ha-ceb-electricity-bill
    ```
-5. Select Category: **Integration** and click **Add**.
-6. Search for **CEB Electricity Bill (Sri Lanka)** and click **Download**.
-7. Restart Home Assistant.
+4. Select Category: **Integration** and click **Add**.
+5. Search for **CEB Electricity Bill (Sri Lanka)** and click **Download**.
+6. Restart Home Assistant.
 
 ### Method 2: Manual Installation
 
@@ -56,14 +66,18 @@ Click the button above to directly open and install the repository in HACS, or f
 1. In Home Assistant, navigate to **Settings** > **Devices & Services**.
 2. Click **Add Integration** in the bottom right corner.
 3. Search for **CEB Electricity Bill (Sri Lanka)**.
-4. Enter your 10-digit CEB Account Number (e.g. `2792108118`) and submit.
-5. A new sensor `sensor.electricity_bill_balance` (or similar) will be created under your CEB device.
+4. Fill in the configuration fields:
+   - **Account Number (10 digits):** Your CEB account number (e.g. `2792108118`).
+   - **Update Interval:** Frequency in hours to check the CEB portal (default: 24, minimum: 12).
+   - **kWh Consumed Entity (optional):** Choose your energy sensor or utility meter (e.g. `sensor.monthly_grid_import`). If left empty, you can use the built-in `number.electricity_consumption_input` entity.
+   - **Monthly Billing Day (1 - 31):** Day of the month your meter is read (e.g. 15).
+5. All settings can be adjusted at any time via **Configure** on the integration card.
 
 ---
 
 ## Example Automation: Bill Change Notification
 
-Get a push notification whenever your monthly electricity bill is updated:
+Get a notification whenever your CEB bill balance changes:
 
 ```yaml
 alias: "CEB Electricity Bill Notification"
@@ -92,7 +106,7 @@ mode: single
 
 ## Disclaimer
 
-This integration is an independent open-source project and is not officially affiliated with, endorsed by, or sponsored by the Ceylon Electricity Board (CEB).
+This integration is an independent open-source project and is not officially affiliated with, endorsed by, or sponsored by the Ceylon Electricity Board (CEB) or PUCSL.
 
 ---
 
