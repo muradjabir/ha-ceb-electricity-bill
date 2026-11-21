@@ -1,6 +1,7 @@
 {
   "domain": "ceb_bill",
   "name": "CEB Electricity Bill (Sri Lanka)",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@muradjabir"],
   "config_flow": true,
   "documentation": "https://github.com/muradjabir/ha-ceb-electricity-bill",
